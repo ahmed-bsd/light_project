@@ -3,41 +3,54 @@ import numpy as np
 from gtts import gTTS 
 import os 
 
-#speaker function
+# Function of speaker
 def speaker(phrase):
-			language = 'en'
-			output = gTTS(text=phrase, lang=language, slow=False)
-			output.save("output.mp3")
-			os.system("start output.mp3")
+    language = 'en'
+    output = gTTS(text=phrase, lang=language, slow=False)
+    output.save("output.mp3")
+    os.system("start output.mp3")
 
 
+# person & traffic light cascade classifier
+person_cascade = cv2.CascadeClassifier('haarcascade_fullbody.xml')
+light_cascade = cv2.CascadeClassifier('cascade2.xml')
 
-casc_classifier = cv2.CascadeClassifier('cascade2.xml')
-
-# HSV red and green colors 
+# HSV red and green colors
 lower_red = np.array([0, 50, 50])
 upper_red = np.array([10, 255, 255])
 lower_green = np.array([36, 25, 25])
 upper_green = np.array([86, 255, 255])
 
-# Initialize the video capture object for the default camera
+# Initialization
 cap = cv2.VideoCapture(0)
-
-# Initialize the previous color as None
 previous_color = None
+person_detected = False
 
 while True:
     ret, frame = cap.read()
 
     if ret:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        lights = casc_classifier.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30), flags=cv2.CASCADE_SCALE_IMAGE)
+
+        # Detect persons in the frame
+        persons = person_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+
+        if len(persons) > 0:
+            person_detected = True
+            print("Person detected !")
+            speaker("A person is in front of you !")
+
+        else:
+            person_detected = False
+
+        # Detecting the traffic lights
+        lights = light_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30), flags=cv2.CASCADE_SCALE_IMAGE)
 
         if len(lights) > 0:
             founded_lights = sorted(lights, key=lambda x: x[0])
 
             for (x, y, w, h) in founded_lights:
-                # Determination of color 
+                # Determine the color of the traffic light
                 roi = frame[y:y+h, x:x+w]
                 hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
 
@@ -46,24 +59,22 @@ while True:
                 red_pixels = cv2.countNonZero(mask_red)
                 green_pixels = cv2.countNonZero(mask_green)
 
-
                 if red_pixels > green_pixels:
                     color = 'Red'
                 else:
                     color = 'Green'
 
-                # when the color change i tell the person by voice note
-                # Note : this feature will be added soon
-                if color != previous_color:
+                # notify the person by voice if a person is detected
+                if color != previous_color and person_detected:
                     if color == 'Red':    
-                        print("stop")
-                        speaker("stop ! the traffic light is red")
+                        print("Stop")
+                        speaker("Stop! The traffic light is red")
                     elif color == 'Green': 
-                        print("go")
-                        speaker("you can go ! the traffic light is green")
+                        print("Go")
+                        speaker("You can go! The traffic light is green")
                     previous_color = color
 
-                # Select the light in the frame and put a text on it
+                # Put a text on the traffic light
                 cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255) if color == 'Red' else (0, 255, 0), 2)
                 cv2.putText(frame, color, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255) if color == 'Red' else (0, 255, 0), 2)
 
