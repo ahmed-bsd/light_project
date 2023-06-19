@@ -1,52 +1,31 @@
 import cv2
 import numpy as np
 from gtts import gTTS
-import RPi.GPIO as GPIO
-import time
 import os
-
+#import pygame
 
 ####  init #####
-LED_PIN = 24
-LDR_PIN = 23
-MOTOR_PIN = 16
-
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(LED_PIN, GPIO.OUT)
-GPIO.setup(LDR_PIN, GPIO.IN)
-GPIO.setup(MOTOR_PIN, GPIO.OUT)
-
 person_cascade = cv2.CascadeClassifier('haarcascade_fullbody.xml')
 light_cascade = cv2.CascadeClassifier('cascade2.xml')
 
 # HSV red & green
-lower_red = np.array([0, 50, 50])
+lower_red = np.array([0, 100, 100])
 upper_red = np.array([10, 255, 255])
-lower_green = np.array([36, 25, 25])
-upper_green = np.array([86, 255, 255])
+lower_green = np.array([50, 100, 100])
+upper_green = np.array([70, 255, 255])
 
 cap = cv2.VideoCapture(0)
 previous_color = None
 person_detected = False
 
-
-####  init #####
-
-
 ##### Functions  ######
 def speaker(phrase):
-    language = 'en'
-    output = gTTS(text=phrase, lang=language, slow=False)
-    output.save("output.mp3")
-    os.system("start output.mp3")
+    print(phrase)
 
 def is_night():
-    ldr_value = GPIO.input(LDR_PIN)
-    return ldr_value == GPIO.LOW
+    return False
 
 ##### Functions  ######
-
-
 
 while True:
     ret, frame = cap.read()
@@ -54,22 +33,24 @@ while True:
     if ret:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        persons = person_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+        hog = cv2.HOGDescriptor()
+        hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
 
-        if len(persons) > 0:
-            person_detected = True
-            print("Person detected !")
-            speaker("A person is in front of you !")
-            GPIO.output(MOTOR_PIN, GPIO.HIGH)
-            time.sleep(1)
-            GPIO.output(MOTOR_PIN, GPIO.LOW)
+        # Detect people in the image
+        (rects, weights) = hog.detectMultiScale(gray, winStride=(4, 4), padding=(16, 16), scale=1.5)
 
+        if len(rects)>0 and weights[0][0]>1:
+            print("person detected ! ! ! ")
+            print("rects" ,len(rects) , " weights : ", weights[0][0])
+            # Draw rectangles around the detected people
+            for (x, y, w, h) in rects:
+                cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
         else:
-            person_detected = False
+            print ("no person ..")
 
         lights = light_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30), flags=cv2.CASCADE_SCALE_IMAGE)
 
-        if len(lights) > 0:
+        if len(lights) > 0 :
             founded_lights = sorted(lights, key=lambda x: x[0])
 
             for (x, y, w, h) in founded_lights:
@@ -82,33 +63,34 @@ while True:
                 red_pixels = cv2.countNonZero(mask_red)
                 green_pixels = cv2.countNonZero(mask_green)
 
-                if red_pixels > green_pixels:
-                    color = 'red'
-                else:
-                    color = 'green'
-
-                #voice notif
-                if color != previous_color and person_detected:
-                    if color == 'red':
-                        print("Stop")
-                        speaker("Stop! The traffic light is red")
-                    elif color == 'green':
-                        print("Go")
-                        speaker("You can go! The traffic light is green")
-                    previous_color = color
-                #text on frame
-                cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255) if color == 'red' else (0, 255, 0), 2)
-                cv2.putText(frame, color, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255) if color == 'red' else (0, 255, 0), 2)
+                if red_pixels>100 or green_pixels>100 :
+                    print("red pixels : ",red_pixels)
+                    print("green pixels : ", green_pixels)
+                
+                    if red_pixels > green_pixels:
+                        color = 'red'
+                        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255), 2)
+                        cv2.putText(frame, color, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                        
+                        speaker("stop red")
+                        
+                    else:
+                        color = 'green'
+                        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                        cv2.putText(frame, color, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                        
+                        speaker("go , green")
 
         cv2.imshow('frame', frame)
+        cv2.imshow('gray',gray)
 
         #Light level
         if is_night():
-            GPIO.output(LED_PIN, GPIO.HIGH)
-        else:
-            GPIO.output(LED_PIN, GPIO.LOW)
+            # Add your own logic here to control LED
+            pass
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
-GPIO.cleanup()
+cap.release()
+cv2.destroyAllWindows()
